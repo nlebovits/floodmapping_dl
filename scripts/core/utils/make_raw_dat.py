@@ -1,6 +1,20 @@
+import os
 from datetime import datetime, timedelta
 import ee
 from google.cloud import storage
+from dotenv import load_dotenv
+import re
+
+
+from utils.pygeoboundaries import get_adm_ee
+from utils.filter_emdat import filter_data_from_gcs
+from utils.export_and_monitor import start_export_task
+from utils.monitor_tasks import monitor_tasks
+
+
+# Load and retrieve environment variables
+load_dotenv()
+cloud_project = os.getenv("GOOGLE_CLOUD_PROJECT_NAME")
 
 
 def make_training_data(bbox, start_date, end_date):
@@ -18,9 +32,6 @@ def make_training_data(bbox, start_date, end_date):
 
     print(f"Generating training data for {start_date} to {end_date}...")
 
-    year_before_start = start_date - timedelta(days=365)
-    start_of_year = datetime(year_before_start.year, 1, 1)
-    end_of_year = datetime(year_before_start.year, 12, 31)
 
     # Load the datasets
 
@@ -212,3 +223,90 @@ def make_training_data(bbox, start_date, end_date):
     )
 
     return combined
+
+def extract_date_from_filename(filename):
+    # Use a regular expression to find dates in the format YYYY-MM-DD
+    match = re.search(r"\d{4}-\d{2}-\d{2}", filename)
+    if match:
+        return match.group(0)  # Return the first match
+    else:
+        return None
+
+
+def check_and_export_geotiffs_to_bucket(
+    bucket, fileNamePrefix, flood_dates, bbox, scale=90
+):
+    # No need to initialize storage_client or retrieve the bucket here
+    existing_files = list(bucket.list_blobs(prefix=fileNamePrefix))
+    existing_dates = [
+        extract_date_from_filename(file.name)
+        for file in existing_files
+        if extract_date_from_filename(file.name) is not None
+    ]
+
+    tasks = []
+
+    for index, (start_date, end_date) in enumerate(flood_dates):
+        if start_date.strftime("%Y-%m-%d") in existing_dates:
+            print(f"Skipping {start_date}: data already exist")
+            continue
+
+        training_data_result = make_training_data(bbox, start_date, end_date)
+        if training_data_result is None:
+            print(
+                f"Skipping export for {start_date} to {end_date}: No imagery available."
+            )
+            continue
+
+        geotiff = training_data_result.toShort()
+        specificFileNamePrefix = f"{fileNamePrefix}_input_data_{start_date}"
+        export_description = f"input_data_{start_date}"
+
+        print(
+            f"Initiating export for GeoTIFF {index + 1} of {len(flood_dates)}: {export_description}"
+        )
+        task = start_export_task(
+            geotiff, export_description, bucket.name, specificFileNamePrefix, scale
+        )
+        tasks.append(task)
+
+    if tasks:
+        print("All exports initiated, monitoring task status...")
+        monitor_tasks(tasks)
+    else:
+        print("No exports were initiated.")
+
+    print(
+        f"Finished checking and exporting GeoTIFFs. Processed {len(flood_dates)} flood events."
+    )
+
+
+def make_raw_dat(place_name, bucket, path):
+    
+    # Check if place_name is a string
+    if not isinstance(place_name, str):
+        return "Error: Place name must be a string in quotation marks."
+
+    aoi = get_adm_ee(territories=place_name, adm="ADM0")
+    bbox = aoi.geometry().bounds()
+
+    date_pairs = filter_data_from_gcs(place_name)
+
+    # Prepare date pairs for processing
+    flood_dates = [
+        (
+            datetime.strptime(start, "%Y-%m-%d").date(),
+            datetime.strptime(end, "%Y-%m-%d").date(),
+        )
+        for start, end in date_pairs
+    ]
+    
+    blob = bucket.blob(
+        path
+    )  # This creates a 'directory' by specifying a blob that ends with '/'
+    blob.upload_from_string(
+        "", content_type="application/x-www-form-urlencoded;charset=UTF-8"
+    )  # Create the directory
+
+    check_and_export_geotiffs_to_bucket(bucket, path, flood_dates, bbox)
+

@@ -4,13 +4,14 @@ import ee
 import rasterio
 from dotenv import load_dotenv
 from google.cloud import storage
-from google.colab import auth
 
-from utils.make_raw_data import make_raw_data
+from utils.make_raw_dat import make_raw_dat
 from utils.make_chips import make_chips
 from utils.process_chips import process_chips
+import argparse
+import traceback
+import pretty_errors
 
-from data_utils.process_all_data import process_flood_data
 
 
 # Load and retrieve environment variables
@@ -22,39 +23,54 @@ key_path = os.getenv("GOOGLE_CLOUD_KEY_PATH")
 os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "YES"
 os.environ["CPL_VSIL_CURL_ALLOWED_EXTENSIONS"] = "tif"
 
-# Authenticate user for Google Colab and initialize Google Cloud Storage client
-auth.authenticate_user()
 client = storage.Client(project=cloud_project)
 
 # Function to process flood data for specified countries
 def main(countries):
+    print("Initializing Earth Engine...")
     ee.Initialize(project=cloud_project)
     for place_name in countries:
         print("Processing data for", place_name, "...")
         
+        snake_case_place_name = place_name.replace(" ", "_").lower()
+        
         # Configure GCS bucket details for raw, chips, and processed data
-        raw_bucket_name = "raw"
-        raw_bucket = client.get_bucket(raw_bucket_name)
-        raw_bucket_path = f"data/{place_name}/raw"
+        main_bucket_name = "hotspotstoplight_floodmapping"
+        main_bucket = client.get_bucket(main_bucket_name)
+        base_path = "deep_learning"
 
-        chips_bucket_name = "chips"
-        chips_bucket_path = f"data/{place_name}/chips"
-
-        processed_bucket_name = "processed"
-        processed_bucket_path = f"data/{place_name}/processed"
+        # Define paths for raw, chips, and processed data within the main bucket
+        raw_data_path = f"{base_path}/data/raw/{snake_case_place_name}"
+        chips_data_path = f"{base_path}/data/chips/{snake_case_place_name}"
+        processed_data_path = f"{base_path}/data/processed/{snake_case_place_name}"
 
         # Create raw data
-        make_raw_data(place_name, raw_bucket, raw_bucket_path)
-
+        make_raw_dat(place_name, main_bucket, raw_data_path)
+        
         # Chip the raw data
-        make_chips(raw_bucket_name, raw_bucket_path, chips_bucket_name, chips_bucket_path)
+        make_chips(main_bucket, raw_data_path, chips_data_path)
 
         # Process the chips
-        process_chips(chips_bucket_name, chips_bucket_path, processed_bucket_name, processed_bucket_path)
+        #process_chips(main_bucket, chips_data_path, main_bucket, processed_data_path)
 
         # Save the processed data
         # unclear if we need this or nor, given the structure of the previous sections
         # save_processed_data(processed_bucket, processed_bucket_path)
+
+
+if __name__ == "__main__":
+    print("Script is running")
+    try:
+        parser = argparse.ArgumentParser(description="Process flood data for given countries.")
+        parser.add_argument("countries", metavar="Country", type=str, nargs="+", help="A list of countries to process")
+
+        args = parser.parse_args()
+        print("Countries to process:", args.countries)  # Debug print
+
+        main(args.countries)
+    except Exception as e:
+        print("An error occurred:", e)
+        traceback.print_exc()
 
 # Future code enhancements and tasks
 # 1) Scale and one-hot encode raw data to create `processed` data; save to `processed` bucket in GCS
