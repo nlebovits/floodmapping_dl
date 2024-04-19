@@ -46,3 +46,10 @@ build-backend = "poetry.core.masonry.api"
 [[tool.poetry.source]]
 name = "pytorch"
 url = "https://download.pytorch.org/whl/"
+priority = "primary"
+
+
+[[tool.poetry.source]]
+name = "PyPI"
+priority = "primary"
+

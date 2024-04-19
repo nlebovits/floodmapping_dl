@@ -51,7 +51,7 @@ def main(countries):
         make_chips(main_bucket, raw_data_path, chips_data_path)
 
         # Process the chips
-        #process_chips(main_bucket, chips_data_path, main_bucket, processed_data_path)
+        process_chips(main_bucket, chips_data_path, processed_data_path)
 
         # Save the processed data
         # unclear if we need this or nor, given the structure of the previous sections

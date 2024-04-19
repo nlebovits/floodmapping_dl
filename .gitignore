@@ -1,4 +1,6 @@
 notebooks/costa_rica_temp_outputs/
+pytorch/venv/
+tensorflow/venv/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
