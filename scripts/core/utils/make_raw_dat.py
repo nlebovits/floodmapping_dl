@@ -291,15 +291,17 @@ def make_raw_dat(place_name, bucket, path):
     bbox = aoi.geometry().bounds()
 
     date_pairs = filter_data_from_gcs(place_name)
+    print(f"Date pairs from filter_data_from_gcs: {date_pairs}")  # Debugging print
 
     # Prepare date pairs for processing
-    flood_dates = [
-        (
-            datetime.strptime(start, "%Y-%m-%d").date(),
-            datetime.strptime(end, "%Y-%m-%d").date(),
-        )
-        for start, end in date_pairs
-    ]
+    flood_dates = []
+    for start, end in date_pairs:
+        try:
+            start_date = datetime.strptime(start, "%Y-%m-%d").date()
+            end_date = datetime.strptime(end, "%Y-%m-%d").date()
+            flood_dates.append((start_date, end_date))
+        except ValueError as e:
+            print(f"Error parsing dates: {start} or {end} could not be parsed. Error: {e}")
     
     blob = bucket.blob(
         path
