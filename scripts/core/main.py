@@ -9,6 +9,7 @@ from utils.make_raw_dat import make_raw_dat
 from utils.make_chips import make_chips
 from utils.process_chips import process_chips
 import argparse
+import time 
 import traceback
 import pretty_errors
 
@@ -18,6 +19,7 @@ import pretty_errors
 load_dotenv()
 cloud_project = os.getenv("GOOGLE_CLOUD_PROJECT_NAME")
 key_path = os.getenv("GOOGLE_CLOUD_KEY_PATH")
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = key_path
 
 # Set GDAL environment configurations for GCS URLs
 os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "YES"
@@ -53,13 +55,10 @@ def main(countries):
         # Process the chips
         process_chips(main_bucket, chips_data_path, processed_data_path)
 
-        # Save the processed data
-        # unclear if we need this or nor, given the structure of the previous sections
-        # save_processed_data(processed_bucket, processed_bucket_path)
-
 
 if __name__ == "__main__":
     print("Script is running")
+    start_time = time.time()  # Start the timer
     try:
         parser = argparse.ArgumentParser(description="Process flood data for given countries.")
         parser.add_argument("countries", metavar="Country", type=str, nargs="+", help="A list of countries to process")
@@ -71,9 +70,11 @@ if __name__ == "__main__":
     except Exception as e:
         print("An error occurred:", e)
         traceback.print_exc()
+    finally:
+        elapsed_time = time.time() - start_time  # Calculate elapsed time
+        print(f"Total execution time: {elapsed_time:.2f} seconds")  # Print the elapsed time
 
 # Future code enhancements and tasks
-# 1) Scale and one-hot encode raw data to create `processed` data; save to `processed` bucket in GCS
-# 2) Train a model using the processed data and save to a `model` bucket in GCS
-# 3) Evaluate the model using processed data and save results to an `evaluation` bucket in GCS
-# 4) Use the model to make predictions for Costa Rica and save to a `prediction` bucket in GCS
+# 1) Train a model using the processed data and save to a `model` bucket in GCS
+# 2) Evaluate the model using processed data and save results to an `evaluation` bucket in GCS
+# 3) Use the model to make predictions for Costa Rica and save to a `prediction` bucket in GCS
