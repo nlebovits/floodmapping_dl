@@ -13,6 +13,7 @@ import time
 import traceback
 import pretty_errors
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 # Load and retrieve environment variables
@@ -27,33 +28,43 @@ os.environ["CPL_VSIL_CURL_ALLOWED_EXTENSIONS"] = "tif"
 
 client = storage.Client(project=cloud_project)
 
-# Function to process flood data for specified countries
-def main(countries):
-    print("Initializing Earth Engine...")
+
+# Function to process flood data for a specific country
+def process_country(place_name):
+    print(f"Initializing Earth Engine for {place_name}...")
     ee.Initialize(project=cloud_project)
-    for place_name in countries:
-        print("Processing data for", place_name, "...")
-        
-        snake_case_place_name = place_name.replace(" ", "_").lower()
-        
-        # Configure GCS bucket details for raw, chips, and processed data
-        main_bucket_name = "hotspotstoplight_floodmapping"
-        main_bucket = client.get_bucket(main_bucket_name)
-        base_path = "deep_learning"
+    print(f"Processing data for {place_name}...")
 
-        # Define paths for raw, chips, and processed data within the main bucket
-        raw_data_path = f"{base_path}/data/raw/{snake_case_place_name}"
-        chips_data_path = f"{base_path}/data/chips/{snake_case_place_name}"
-        processed_data_path = f"{base_path}/data/processed/{snake_case_place_name}"
+    snake_case_place_name = place_name.replace(" ", "_").lower()
+    main_bucket_name = "hotspotstoplight_floodmapping"
+    main_bucket = client.get_bucket(main_bucket_name)
+    base_path = "deep_learning"
 
-        # Create raw data
-        make_raw_dat(place_name, main_bucket, raw_data_path)
-        
-        # Chip the raw data
-        make_chips(main_bucket, raw_data_path, chips_data_path)
+    raw_data_path = f"{base_path}/data/raw/{snake_case_place_name}"
+    chips_data_path = f"{base_path}/data/chips/{snake_case_place_name}"
+    processed_data_path = f"{base_path}/data/processed/{snake_case_place_name}"
 
-        # Process the chips
-        process_chips(main_bucket, chips_data_path, processed_data_path)
+    # Create raw data
+    make_raw_dat(place_name, main_bucket, raw_data_path)
+
+    # Chip the raw data
+    make_chips(main_bucket, raw_data_path, chips_data_path)
+
+    # Process the chips
+    process_chips(main_bucket, chips_data_path, processed_data_path)
+
+    print(f"Finished processing {place_name}")
+
+def main(countries):
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        # Submit tasks to the executor
+        future_to_country = {executor.submit(process_country, country): country for country in countries}
+        for future in as_completed(future_to_country):
+            country = future_to_country[future]
+            try:
+                future.result()  # Get the result of the execution
+            except Exception as e:
+                print(f"An error occurred processing {country}: {e}")
 
 
 if __name__ == "__main__":
@@ -62,10 +73,8 @@ if __name__ == "__main__":
     try:
         parser = argparse.ArgumentParser(description="Process flood data for given countries.")
         parser.add_argument("countries", metavar="Country", type=str, nargs="+", help="A list of countries to process")
-
         args = parser.parse_args()
         print("Countries to process:", args.countries)  # Debug print
-
         main(args.countries)
     except Exception as e:
         print("An error occurred:", e)
